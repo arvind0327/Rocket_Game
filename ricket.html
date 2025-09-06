@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Rocket Game</title>
+  <style>
+    body { background: #222; margin: 0; }
+    canvas {
+      background: #222;
+      display: block;
+      margin: 0 auto;
+      image-rendering: pixelated;
+      width: auto;
+      height: 100vh;
+      aspect-ratio: 2 / 3; /* Portrait for smaller frame */
+      box-shadow: 0 0 60px 30px #ffe066, 0 0 0 100vmax #ffe066 inset; /* bright glow around canvas */
+    }
+    body {
+      background: #ffe066; /* bright yellow background outside canvas */
+    }
+  </style>
+</head>
+<body>
+  <!-- Reduce the canvas size for a smaller game frame -->
+  <canvas id="game" width="320" height="480"></canvas>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    // Game variables
+    let frames = 0;
+    let gameOver = false;
+
+    // Update rocket's initial position for new width
+    const rocket = {
+      x: canvas.width / 2 - 16,
+      y: canvas.height - 80,
+      w: 32,
+      h: 48,
+      vx: 0,
+      speed: 4,       
+       bullets: [],
+      bulletSpeed: 7,
+      draw() {
+        ctx.save();
+        ctx.translate(this.x + this.w / 2, this.y + this.h / 2);
+
+        // Jet body
+        ctx.fillStyle = "#f1c40f";
+        ctx.beginPath();
+        ctx.moveTo(0, -this.h / 2);
+        ctx.lineTo(this.w / 2, this.h / 2);
+        ctx.lineTo(-this.w / 2, this.h / 2);
+        ctx.closePath();
+        ctx.fill();
+
+        // Window
+        ctx.fillStyle = "#3498db";
+        ctx.beginPath();
+        ctx.arc(0, -this.h / 4, 8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Gun barrel (drawn in front of the rocket)
+        ctx.save();
+        ctx.strokeStyle = "#888";
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(0, -this.h / 2); // nose of the rocket
+        ctx.lineTo(0, -this.h / 2 - 18); // extend forward
+        ctx.stroke();
+        ctx.restore();
+
+        // Jet flames
+        ctx.fillStyle = "#e67e22";
+        ctx.beginPath();
+        ctx.moveTo(-8, this.h / 2);
+        ctx.lineTo(0, this.h / 2 + 18 + Math.random() * 8);
+        ctx.lineTo(8, this.h / 2);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+
+        // Draw bullets
+        ctx.fillStyle = "#fff";
+        for (let bullet of this.bullets) {
+          ctx.fillRect(bullet.x, bullet.y, 4, 12);
+        }
+      },
+      update() {
+        this.x += this.vx;
+
+        // Boundaries
+        if (this.x < 0) this.x = 0;
+        if (this.x + this.w > canvas.width) this.x = canvas.width - this.w;
+
+        // Update bullets
+        for (let i = 0; i < this.bullets.length; i++) {
+          this.bullets[i].y -= this.bulletSpeed;
+          // Remove off-screen bullets
+          if (this.bullets[i].y < -12) {
+            this.bullets.splice(i, 1);
+            i--;
+          }
+        }
+      },
+      fire() {
+        // Fire a bullet from the gun barrel (front of the jet)
+        this.bullets.push({
+          x: this.x + this.w / 2 - 2,
+          y: this.y - 8 - 18 // align with gun barrel tip
+        });
+      },
+      reset() {
+        this.x = canvas.width / 2 - 16;
+        this.vx = 0;
+        this.bullets = [];
+      }
+    };
+
+    // Coins
+    const coins = {
+      items: [],
+      radius: 12,
+      speed: 4,
+      spawnRate: 40, // spawn coins more frequently (was 90)
+      coinsPerSpawn: 2, // spawn multiple coins at once
+      draw() {
+        for (let coin of this.items) {
+          drawCoin(coin.x, coin.y, this.radius);
+        }
+      },
+      update() {
+        if (frames % this.spawnRate === 0) {
+          // Spawn multiple coins at random x across the whole width
+          let gapY = -this.radius * 2;
+          let minX = 40, maxX = canvas.width - 40 - this.radius * 2;
+          for (let c = 0; c < this.coinsPerSpawn; c++) {
+            let x = minX + Math.random() * (maxX - minX);
+            this.items.push({ x, y: gapY, collected: false });
+          }
+        }
+        for (let i = 0; i < this.items.length; i++) {
+          let coin = this.items[i];
+          coin.y += this.speed;
+
+          // Collision with rocket
+          let cx = coin.x + this.radius, cy = coin.y + this.radius;
+          let rx = rocket.x, ry = rocket.y, rw = rocket.w, rh = rocket.h;
+          // Simple circle-rectangle collision
+          let closestX = Math.max(rx, Math.min(cx, rx + rw));
+          let closestY = Math.max(ry, Math.min(cy, ry + rh));
+          let dx = cx - closestX, dy = cy - closestY;
+          if (dx * dx + dy * dy < this.radius * this.radius) {
+            score.value += 5; // coins give 5 points
+            this.items.splice(i, 1);
+            i--;
+            continue;
+          }
+
+          // Remove off-screen coins
+          if (coin.y > canvas.height) {
+            this.items.splice(i, 1);
+            i--;
+          }
+        }
+      },
+      reset() {
+        this.items = [];
+      }
+    };
+
+    // Bomb Obstacles
+    const bombs = {
+      items: [],
+      radius: 18,
+      speed: 5,
+      spawnRate: 50, // lower is more frequent
+      draw() {
+        for (let bomb of this.items) {
+          drawFighterPlane(bomb.x, bomb.y, this.radius);
+        }
+      },
+      update() {
+        if (frames % this.spawnRate === 0) {
+          // Spawn bomb at random x
+          let minX = 20, maxX = canvas.width - 20 - this.radius * 2;
+          let x = minX + Math.random() * (maxX - minX);
+          this.items.push({ x, y: -this.radius * 2, fireCooldown: Math.floor(Math.random() * 30) + 30 });
+        }
+        for (let i = 0; i < this.items.length; i++) {
+          let bomb = this.items[i];
+          bomb.y += this.speed + Math.random() * 1.5;
+
+          // Fighter plane fires
+          bomb.fireCooldown--;
+          if (bomb.fireCooldown <= 0) {
+            enemyBullets.items.push({
+              x: bomb.x + this.radius,
+              y: bomb.y + this.radius * 2
+            });
+            bomb.fireCooldown = Math.floor(Math.random() * 40) + 30;
+          }
+
+          // --- NEW: Collision with rocket bullets ---
+          for (let j = 0; j < rocket.bullets.length; j++) {
+            let bullet = rocket.bullets[j];
+            // Simple circle-rectangle collision
+            let bx = bomb.x + this.radius, by = bomb.y + this.radius;
+            let cx = bullet.x + 2, cy = bullet.y + 6; // bullet center
+            let dx = bx - cx, dy = by - cy;
+            if (dx * dx + dy * dy < this.radius * this.radius) {
+              // Remove both bullet and plane
+              rocket.bullets.splice(j, 1);
+              this.items.splice(i, 1);
+              score.value += 10; // reward for shooting down a plane
+              i--;
+              break;
+            }
+          }
+
+          // Collision with rocket
+          let bx = bomb.x + this.radius, by = bomb.y + this.radius;
+          let rx = rocket.x, ry = rocket.y, rw = rocket.w, rh = rocket.h;
+          let closestX = Math.max(rx, Math.min(bx, rx + rw));
+          let closestY = Math.max(ry, Math.min(by, ry + rh));
+          let dx = bx - closestX, dy = by - closestY;
+          if (dx * dx + dy * dy < this.radius * this.radius) {
+            gameOver = true;
+            this.items.splice(i, 1);
+            i--;
+            continue;
+          }
+
+          // Remove off-screen bombs
+          if (bomb.y > canvas.height) {
+            this.items.splice(i, 1);
+            i--;
+          }
+        }
+      },
+      reset() {
+        this.items = [];
+      }
+    };
+
+    // Enemy Bullets
+    const enemyBullets = {
+      items: [],
+      speed: 7,
+      draw() {
+        ctx.save();
+        ctx.fillStyle = "#ff4444";
+        for (let b of this.items) {
+          ctx.fillRect(b.x - 2, b.y, 4, 12);
+        }
+        ctx.restore();
+      },
+      update() {
+        for (let i = 0; i < this.items.length; i++) {
+          let b = this.items[i];
+          b.y += this.speed;
+          // Collision with rocket
+          let rx = rocket.x, ry = rocket.y, rw = rocket.w, rh = rocket.h;
+          if (
+            b.x > rx && b.x < rx + rw &&
+            b.y + 12 > ry && b.y < ry + rh
+          ) {
+            gameOver = true;
+            this.items.splice(i, 1);
+            i--;
+            continue;
+          }
+          // Remove off-screen
+          if (b.y > canvas.height) {
+            this.items.splice(i, 1);
+            i--;
+          }
+        }
+      },
+      reset() {
+        this.items = [];
+      }
+    };
+
+    // Helper function to draw a coin
+    function drawCoin(x, y, r) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x + r, y + r, r, 0, Math.PI * 2);
+      ctx.fillStyle = "#FFD700";
+      ctx.shadowColor = "#FFEB3B";
+      ctx.shadowBlur = 8;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "#B8860B";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      // Inner shine
+      ctx.beginPath();
+      ctx.arc(x + r, y + r, r * 0.5, Math.PI * 1.2, Math.PI * 1.7);
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Helper function to draw a fighter plane (replaces bomb)
+    function drawFighterPlane(x, y, r) {
+      ctx.save();
+      ctx.translate(x + r, y + r);
+
+      // Body (vertical, facing down)
+      ctx.fillStyle = "#3a6ea5";
+      ctx.beginPath();
+      ctx.moveTo(0, r); // nose (bottom)
+      ctx.lineTo(r * 0.5, -r * 0.7); // right tail (top right)
+      ctx.lineTo(0, -r * 0.4); // rear (top center)
+      ctx.lineTo(-r * 0.5, -r * 0.7); // left tail (top left)
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#1a2a3a";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Cockpit
+      ctx.fillStyle = "#b3e0ff";
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.5, r * 0.22, r * 0.32, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#1a2a3a";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Left wing
+      ctx.fillStyle = "#2d4d6a";
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.5, -r * 0.1);
+      ctx.lineTo(-r * 1.1, -r * 0.5);
+      ctx.lineTo(-r * 0.3, -r * 0.5);
+      ctx.closePath();
+      ctx.fill();
+
+      // Right wing
+      ctx.beginPath();
+      ctx.moveTo(r * 0.5, -r * 0.1);
+      ctx.lineTo(r * 1.1, -r * 0.5);
+      ctx.lineTo(r * 0.3, -r * 0.5);
+      ctx.closePath();
+      ctx.fill();
+
+      // Tail fin
+      ctx.fillStyle = "#4a8edb";
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 0.4);
+      ctx.lineTo(r * 0.13, -r * 0.9);
+      ctx.lineTo(-r * 0.13, -r * 0.9);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    // Score
+    const score = {
+      value: 0,
+      draw() {
+        ctx.fillStyle = "#FFF";
+        ctx.strokeStyle = "#000";
+        ctx.font = "35px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(this.value, canvas.width / 2, 50);
+        ctx.strokeText(this.value, canvas.width / 2, 50);
+      },
+      reset() {
+        this.value = 0;
+      }
+    };
+
+    // Remove firing control variables and intervals
+    // let firing = false;
+    // let fireInterval = null;
+
+    // Start automatic firing when the game starts or restarts
+    let fireInterval = setInterval(() => {
+      if (!gameOver) rocket.fire();
+    }, 150); // adjust fire rate as desired
+
+    // Control
+    document.addEventListener("keydown", function (e) {
+      if (e.code === "ArrowLeft") {
+        rocket.vx = -rocket.speed;
+      }
+      if (e.code === "ArrowRight") {
+        rocket.vx = rocket.speed;
+      }
+      if ((e.code === "Space" || e.code === "ArrowUp") && gameOver) {
+        rocket.reset();
+        score.reset();
+        coins.reset();
+        bombs.reset();
+        enemyBullets.reset();
+        gameOver = false;
+        // Restart automatic firing on game restart
+        clearInterval(fireInterval);
+        fireInterval = setInterval(() => {
+          if (!gameOver) rocket.fire();
+        }, 150);
+      }
+    });
+    document.addEventListener("keyup", function (e) {
+      if (e.code === "ArrowLeft" || e.code === "ArrowRight") {
+        rocket.vx = 0;
+      }
+    });
+
+    // Main loop
+    function draw()  {
+      // Background
+      ctx.fillStyle = "#222";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      bombs.draw();   // draw bombs first
+      enemyBullets.draw(); // draw enemy bullets
+      coins.draw();
+      rocket.draw();
+      score.draw();
+
+      if (gameOver) {
+        ctx.fillStyle = "#000";
+        ctx.font = "30px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("Game Over", canvas.width / 2, canvas.height / 2);
+        ctx.font = "20px Arial";
+        ctx.fillText("Press Space to Restart", canvas.width / 2, canvas.height / 2 + 40);
+      }
+    }
+
+    function update() {
+      if (!gameOver) {
+        rocket.update();
+        bombs.update(); // update bombs
+        enemyBullets.update(); // update enemy bullets
+        coins.update();
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      frames++;
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
+</body>
+</html>
