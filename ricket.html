@@ -414,6 +414,49 @@
       }
     });
 
+    // Add mobile touch controls
+    let touchX = null;
+
+    canvas.addEventListener("touchstart", function (e) {
+      if (e.touches.length > 0) {
+        touchX = e.touches[0].clientX;
+      }
+    });
+
+    canvas.addEventListener("touchmove", function (e) {
+      if (e.touches.length > 0) {
+        let currentX = e.touches[0].clientX;
+        let delta = currentX - touchX;
+        touchX = currentX;
+        // Move rocket horizontally based on swipe
+        rocket.x += delta;
+        // Boundaries
+        if (rocket.x < 0) rocket.x = 0;
+        if (rocket.x + rocket.w > canvas.width) rocket.x = canvas.width - rocket.w;
+      }
+    });
+
+    canvas.addEventListener("touchend", function () {
+      touchX = null;
+    });
+
+    // Add mobile device tilt controls (accelerometer)
+    if (window.DeviceOrientationEvent) {
+      window.addEventListener("deviceorientation", function (event) {
+        // gamma: left/right tilt (-90 to 90)
+        let gamma = event.gamma;
+        if (gamma !== null) {
+          // Map gamma to rocket horizontal movement
+          // gamma -30 (left) to +30 (right)
+          let normalized = Math.max(-30, Math.min(30, gamma));
+          rocket.x = canvas.width / 2 - rocket.w / 2 + (normalized / 30) * (canvas.width / 2 - rocket.w / 2);
+          // Boundaries
+          if (rocket.x < 0) rocket.x = 0;
+          if (rocket.x + rocket.w > canvas.width) rocket.x = canvas.width - rocket.w;
+        }
+      });
+    }
+
     // Main loop
     function draw()  {
       // Background
