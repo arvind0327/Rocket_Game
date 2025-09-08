@@ -35,10 +35,9 @@
       border-radius: 18px;
       border: 2px solid #ffe066;
     }
-    button {
+    #restartBtn, #difficultyBtn {
       position: absolute;
       left: 50%;
-      top: 60%;
       transform: translate(-50%, 0);
       padding: 16px 32px;
       font-size: 1.2em;
@@ -50,12 +49,53 @@
       display: none;
       z-index: 10;
     }
+    #restartBtn { top: 60%; }
+    #difficultyBtn { top: 70%; }
+    #highScoreDisplay {
+      position: absolute;
+      left: 50%;
+      top: 10px;
+      transform: translateX(-50%);
+      color: #ffe066;
+      font-size: 1.1em;
+      font-family: Arial, sans-serif;
+      text-shadow: 1px 1px 4px #222;
+      z-index: 10;
+      background: rgba(34,34,34,0.7);
+      padding: 4px 16px;
+      border-radius: 8px;
+      border: 1px solid #ffe066;
+      display: block;
+    }
   </style>
 </head>
 <body>
+  <div id="highScoreDisplay"></div>
   <button id="restartBtn">Restart</button>
+  <button id="difficultyBtn">Difficulty: Easy</button>
   <canvas id="game"></canvas>
   <script>
+    // Difficulty settings (now with Hardcore)
+    const difficulties = [
+      { name: "Easy", bombSpeed: 4, bombSpawn: 60, coinSpeed: 3, coinSpawn: 45, enemyBulletSpeed: 7 },
+      { name: "Medium", bombSpeed: 6, bombSpawn: 45, coinSpeed: 5, coinSpawn: 35, enemyBulletSpeed: 9 },
+      { name: "Hard", bombSpeed: 8, bombSpawn: 32, coinSpeed: 6, coinSpawn: 28, enemyBulletSpeed: 12 },
+      { name: "Hardcore", bombSpeed: 12, bombSpawn: 18, coinSpeed: 8, coinSpawn: 18, enemyBulletSpeed: 18 }
+    ];
+    let difficultyIndex = 0;
+    let currentDifficulty = difficulties[difficultyIndex];
+
+    // High score per difficulty
+    function getHighScoreKey() {
+      return "rocketHighScore_" + currentDifficulty.name;
+    }
+    let highScore = parseInt(localStorage.getItem(getHighScoreKey()) || "0");
+    function updateHighScoreDisplay() {
+      document.getElementById("highScoreDisplay").textContent =
+        `High Score: ${highScore} (${currentDifficulty.name})`;
+    }
+    updateHighScoreDisplay();
+
     // Responsive canvas setup for mobile ratio (2:3)
     function resizeCanvas() {
       const canvas = document.getElementById('game');
@@ -191,8 +231,8 @@
     const coins = {
       items: [],
       radius: 14,
-      speed: 5,
-      spawnRate: 35,
+      get speed() { return currentDifficulty.coinSpeed; },
+      get spawnRate() { return currentDifficulty.coinSpawn; },
       coinsPerSpawn: 2,
       draw() {
         for (let coin of this.items) {
@@ -238,8 +278,8 @@
     const bombs = {
       items: [],
       radius: 22,
-      speed: 6,
-      spawnRate: 45,
+      get speed() { return currentDifficulty.bombSpeed; },
+      get spawnRate() { return currentDifficulty.bombSpawn; },
       draw() {
         for (let bomb of this.items) {
           drawFighterPlane(bomb.x, bomb.y, this.radius);
@@ -303,7 +343,7 @@
     // Enemy Bullets (red laser)
     const enemyBullets = {
       items: [],
-      speed: 9,
+      get speed() { return currentDifficulty.enemyBulletSpeed; },
       draw() {
         for (let b of this.items) {
           drawEnemyBullet(b.x, b.y);
@@ -523,9 +563,21 @@
       return /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
     }
     const restartBtn = document.getElementById('restartBtn');
+    const difficultyBtn = document.getElementById('difficultyBtn');
     if (isMobile()) {
       restartBtn.style.display = 'block';
+      difficultyBtn.style.display = 'block';
     }
+
+    // Difficulty button logic
+    difficultyBtn.addEventListener('click', function () {
+      difficultyIndex = (difficultyIndex + 1) % difficulties.length;
+      currentDifficulty = difficulties[difficultyIndex];
+      difficultyBtn.textContent = "Difficulty: " + currentDifficulty.name;
+      highScore = parseInt(localStorage.getItem(getHighScoreKey()) || "0");
+      updateHighScoreDisplay();
+      restartGame();
+    });
 
     // Restart logic for button
     restartBtn.addEventListener('click', function () {
@@ -559,6 +611,13 @@
       rocket.draw();
       score.draw();
 
+      // Save high score per difficulty
+      if (score.value > highScore) {
+        highScore = score.value;
+        localStorage.setItem(getHighScoreKey(), highScore);
+        updateHighScoreDisplay();
+      }
+
       if (gameOver) {
         ctx.save();
         ctx.globalAlpha = 0.85;
@@ -574,11 +633,13 @@
         ctx.fillText("Press Space or Restart", canvas.width / 2, canvas.height / 2 + 40);
         if (isMobile()) {
           restartBtn.style.display = 'block';
+          difficultyBtn.style.display = 'block';
         }
         ctx.restore();
       } else {
         if (isMobile()) {
           restartBtn.style.display = 'none';
+          difficultyBtn.style.display = 'block';
         }
       }
     }
